@@ -189,49 +189,52 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 def check_one(uri: str) -> dict:
-    out = to_outbound(uri)
-    if not out: return {"ok": False, "error": "unsupported/parse error"}
-
-    port = free_port()
-    cfg = {
-        "log": {"level": "error"},
-        "inbounds": [{"type": "socks", "tag": "in", "listen": "127.0.0.1", "listen_port": port}],
-        "outbounds": [out, {"type": "direct", "tag": "direct"}],
-    }
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
-        json.dump(cfg, f)
-        cfg_path = f.name
-
-    proc = subprocess.Popen([SINGBOX, "run", "-c", cfg_path], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    for _ in range(40):
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=1): break
-        except OSError:
-            if proc.poll() is not None: break
-            time.sleep(0.2)
-
-    t0 = time.time()
-    ok, err = False, None
     try:
-        r = requests.get(PROBE_URL, proxies={"http": f"socks5h://127.0.0.1:{port}", "https": f"socks5h://127.0.0.1:{port}"}, timeout=TIMEOUT)
-        ok = r.status_code in (200, 204)
-        if not ok: err = f"HTTP {r.status_code}"
-    except Exception as e:
-        err = f"{type(e).__name__}: {e}"
-    finally:
-        proc.terminate()
-        try: proc.wait(timeout=3)
-        except subprocess.TimeoutExpired: proc.kill()
-        try: os.unlink(cfg_path)
-        except OSError: pass
+        out = to_outbound(uri)
+        if not out: return {"ok": False, "error": "unsupported/parse error"}
 
-    return {
-        "type": out.get("type", "unknown"), 
-        "server": f'{out.get("server", "unknown")}:{out.get("server_port", "?")}',
-        "ok": ok, 
-        "latency_ms": int((time.time() - t0) * 1000) if ok else None,
-        "error": err,
-    }
+        port = free_port()
+        cfg = {
+            "log": {"level": "error"},
+            "inbounds": [{"type": "socks", "tag": "in", "listen": "127.0.0.1", "listen_port": port}],
+            "outbounds": [out, {"type": "direct", "tag": "direct"}],
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(cfg, f)
+            cfg_path = f.name
+
+        proc = subprocess.Popen([SINGBOX, "run", "-c", cfg_path], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        for _ in range(40):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1): break
+            except OSError:
+                if proc.poll() is not None: break
+                time.sleep(0.2)
+
+        t0 = time.time()
+        ok, err = False, None
+        try:
+            r = requests.get(PROBE_URL, proxies={"http": f"socks5h://127.0.0.1:{port}", "https": f"socks5h://127.0.0.1:{port}"}, timeout=TIMEOUT)
+            ok = r.status_code in (200, 204)
+            if not ok: err = f"HTTP {r.status_code}"
+        except Exception as e:
+            err = f"{type(e).__name__}: {e}"
+        finally:
+            proc.terminate()
+            try: proc.wait(timeout=3)
+            except subprocess.TimeoutExpired: proc.kill()
+            try: os.unlink(cfg_path)
+            except OSError: pass
+
+        return {
+            "type": out.get("type", "unknown"), 
+            "server": f'{out.get("server", "unknown")}:{out.get("server_port", "?")}',
+            "ok": ok, 
+            "latency_ms": int((time.time() - t0) * 1000) if ok else None,
+            "error": err,
+        }
+    except Exception as e:
+        return {"ok": False, "error": f"Parser/Crash: {e}", "type": "unknown", "server": "unknown", "latency_ms": None}
 
 # ==========================================
 # 4. СБОР ИСТОЧНИКОВ И MAIN
@@ -258,7 +261,10 @@ def main():
     items = collect_sources()
     if not items:
         print("Нет ни ключей, ни подписок", file=sys.stderr)
-        sys.exit(2)
+        # Создаем пустые отчеты, чтобы шаги выгрузки не падали
+        REPORT.write_text("[]")
+        REPORT_MD.write_text("## Проверка\n\nНет ключей.")
+        sys.exit(0)
 
     print(f"К проверке: {len(items)} уникальных ключей, воркеров: {WORKERS}", flush=True)
 
@@ -271,10 +277,15 @@ def main():
             r = fut.result()
             done += 1
             
+            # Безопасное извлечение всех полей
             r_type = r.get("type", "unknown")
             r_server = r.get("server", "unknown")
-            mark = "OK" if r["ok"] else "FAIL"
-            tail = f'{r["latency_ms"]}ms' if r["ok"] else r.get("error", "unknown error")
+            r_ok = r.get("ok", False)
+            r_latency = r.get("latency_ms")
+            r_error = r.get("error")
+            
+            mark = "OK" if r_ok else "FAIL"
+            tail = f'{r_latency}ms' if r_ok else (r_error or "unknown error")
             
             print(f"[{done}/{len(items)}] {mark} {r_type} {r_server} ({tail})", flush=True)
             
@@ -282,14 +293,17 @@ def main():
                 "id": key_id(it["uri"]), 
                 "type": r_type, 
                 "server": r_server,
-                "ok": r["ok"], 
-                "latency_ms": r["latency_ms"], 
-                "error": r.get("error"),
+                "ok": r_ok, 
+                "latency_ms": r_latency, 
+                "error": r_error,
                 "sources": it["sources"], 
                 "uri_short": it["uri"][:100] + ("..." if len(it["uri"]) > 100 else ""),
             })
 
+    # Сортировка также должна быть безопасной
     results.sort(key=lambda x: (not x["ok"], x["latency_ms"] or 10**9))
+    
+    # Сохраняем результаты
     REPORT.write_text(json.dumps(results, indent=2, ensure_ascii=False))
 
     total = len(results)
