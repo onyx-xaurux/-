@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 # ==========================================
-# 1. ПАРСЕРЫ КЛЮЧЕЙ (VLESS, TROJAN, VMESS, SS, HY2)
+# 1. ПАРСЕРЫ КЛЮЧЕЙ
 # ==========================================
 
 def _b64(s: str) -> str:
@@ -226,8 +226,10 @@ def check_one(uri: str) -> dict:
         except OSError: pass
 
     return {
-        "type": out["type"], "server": f'{out.get("server")}:{out.get("server_port")}',
-        "ok": ok, "latency_ms": int((time.time() - t0) * 1000) if ok else None,
+        "type": out.get("type", "unknown"), 
+        "server": f'{out.get("server", "unknown")}:{out.get("server_port", "?")}',
+        "ok": ok, 
+        "latency_ms": int((time.time() - t0) * 1000) if ok else None,
         "error": err,
     }
 
@@ -268,13 +270,23 @@ def main():
             it = futures[fut]
             r = fut.result()
             done += 1
+            
+            r_type = r.get("type", "unknown")
+            r_server = r.get("server", "unknown")
             mark = "OK" if r["ok"] else "FAIL"
-            tail = f'{r["latency_ms"]}ms' if r["ok"] else r.get("error")
-            print(f"[{done}/{len(items)}] {mark} {r['type']} {r['server']} ({tail})", flush=True)
+            tail = f'{r["latency_ms"]}ms' if r["ok"] else r.get("error", "unknown error")
+            
+            print(f"[{done}/{len(items)}] {mark} {r_type} {r_server} ({tail})", flush=True)
+            
             results.append({
-                "id": key_id(it["uri"]), "type": r["type"], "server": r["server"],
-                "ok": r["ok"], "latency_ms": r["latency_ms"], "error": r.get("error"),
-                "sources": it["sources"], "uri_short": it["uri"][:100] + ("..." if len(it["uri"]) > 100 else ""),
+                "id": key_id(it["uri"]), 
+                "type": r_type, 
+                "server": r_server,
+                "ok": r["ok"], 
+                "latency_ms": r["latency_ms"], 
+                "error": r.get("error"),
+                "sources": it["sources"], 
+                "uri_short": it["uri"][:100] + ("..." if len(it["uri"]) > 100 else ""),
             })
 
     results.sort(key=lambda x: (not x["ok"], x["latency_ms"] or 10**9))
