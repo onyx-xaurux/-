@@ -1,0 +1,52 @@
+name: Check VPN keys (whitelist disabled)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"   # каждые 6 часов
+  push:
+    paths:
+      - "keys/**"
+      - ".github/workflows/check-keys.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install requests
+
+      - name: Run key checker
+        env:
+          KEYS_DIR: "keys"          # папка с .conf / .json / .txt ключами
+          TIMEOUT: "8"
+        run: python scripts/check_keys.py
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: key-check-report
+          path: report.json
+          if-no-files-found: warn
+
+      - name: Publish summary
+        if: always()
+        run: |
+          {
+            echo "## Результаты проверки ключей"
+            echo ""
+            echo '```json'
+            cat report.json 2>/dev/null || echo '{"error":"no report"}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
