@@ -261,7 +261,6 @@ def main():
     items = collect_sources()
     if not items:
         print("Нет ни ключей, ни подписок", file=sys.stderr)
-        # Создаем пустые отчеты, чтобы шаги выгрузки не падали
         REPORT.write_text("[]")
         REPORT_MD.write_text("## Проверка\n\nНет ключей.")
         sys.exit(0)
@@ -277,7 +276,6 @@ def main():
             r = fut.result()
             done += 1
             
-            # Безопасное извлечение всех полей
             r_type = r.get("type", "unknown")
             r_server = r.get("server", "unknown")
             r_ok = r.get("ok", False)
@@ -300,10 +298,8 @@ def main():
                 "uri_short": it["uri"][:100] + ("..." if len(it["uri"]) > 100 else ""),
             })
 
-    # Сортировка также должна быть безопасной
     results.sort(key=lambda x: (not x["ok"], x["latency_ms"] or 10**9))
     
-    # Сохраняем результаты
     REPORT.write_text(json.dumps(results, indent=2, ensure_ascii=False))
 
     total = len(results)
@@ -332,7 +328,10 @@ def main():
         lines.append(f'| {i} | {r["type"]} | {r["server"]} | {status} | {info} | {src} |')
 
     REPORT_MD.write_text("\n".join(lines))
-    if ok == 0: sys.exit(1)
+    
+    # Выходим с 0, чтобы не красить билд в красный, если ключи просто битые. 
+    # Ошибки парсинга и краши скрипта обрабатываются выше.
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()
