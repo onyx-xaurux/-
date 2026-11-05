@@ -3,3 +3,5 @@ https://raw.githubusercontent.com/OVI-vpn/bs/refs/heads/main/full.txt
 https://raw.githubusercontent.com/KoT-ANTIDOT/bunker-subscriptions/refs/heads/main/White_List.txt
 https://gitverse.ru/api/repos/Pizduk/PizdukVPN/raw/branch/master/WlSubPiz.txt
 https://raw.githubusercontent.com/cheesyx-rudy/AeryxVPN/main/AeryxVPN
+https://git.quic.best/dev/auto/raw/branch/main/wl
+
