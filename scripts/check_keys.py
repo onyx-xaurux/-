@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
-import json, os, socket, subprocess, sys, tempfile, time, hashlib
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import sys
 from pathlib import Path
+
+# ВАЖНО: добавляем папку скрипта в sys.path ДО импорта локальных модулей
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import json
+import os
+import socket
+import subprocess
+import tempfile
+import time
+import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import requests
 
-sys.path.insert(0, str(Path(__file__).parent))
+# Теперь эти импорты сработают, так как путь добавлен выше
 from gen_singbox import to_outbound
 from fetch_subs import load_all
 
