@@ -23,9 +23,8 @@ jobs:
           python-version: "3.12"
 
       - name: Install deps
-        run: pip install requests
+        run: pip install "requests[socks]"
 
-      # Секреты передаём через env, а не через if:
       - name: Restore keys & subs from secrets
         env:
           KEYS_B64: ${{ secrets.KEYS_B64 }}
