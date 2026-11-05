@@ -25,14 +25,16 @@ jobs:
       - name: Install deps
         run: pip install requests
 
-      # (опционально) ключи и подписки из Secrets
+      # Секреты передаём через env, а не через if:
       - name: Restore keys & subs from secrets
-        if: ${{ secrets.KEYS_B64 != '' || secrets.SUBS_B64 != '' }}
+        env:
+          KEYS_B64: ${{ secrets.KEYS_B64 }}
+          SUBS_B64: ${{ secrets.SUBS_B64 }}
         run: |
           mkdir -p keys
-          [ -n "${{ secrets.KEYS_B64 }}" ] && echo "${{ secrets.KEYS_B64 }}" | base64 -d > keys/keys.txt
-          [ -n "${{ secrets.SUBS_B64 }}" ] && echo "${{ secrets.SUBS_B64 }}" | base64 -d > keys/subs.txt
-          true
+          if [ -n "$KEYS_B64" ]; then echo "$KEYS_B64" | base64 -d > keys/keys.txt; fi
+          if [ -n "$SUBS_B64" ]; then echo "$SUBS_B64" | base64 -d > keys/subs.txt; fi
+          ls -la keys || true
 
       - name: Download sing-box
         run: |
