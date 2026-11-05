@@ -1,35 +1,57 @@
-name: Check VPN keys (whitelist disabled)
+name: Check VPN keys & subscriptions
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"   # каждые 6 часов
+    - cron: "0 */6 * * *"
   push:
     paths:
       - "keys/**"
+      - "scripts/**"
       - ".github/workflows/check-keys.yml"
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install deps
         run: pip install requests
 
-      - name: Run key checker
+      # (опционально) ключи и подписки из Secrets
+      - name: Restore keys & subs from secrets
+        if: ${{ secrets.KEYS_B64 != '' || secrets.SUBS_B64 != '' }}
+        run: |
+          mkdir -p keys
+          [ -n "${{ secrets.KEYS_B64 }}" ] && echo "${{ secrets.KEYS_B64 }}" | base64 -d > keys/keys.txt
+          [ -n "${{ secrets.SUBS_B64 }}" ] && echo "${{ secrets.SUBS_B64 }}" | base64 -d > keys/subs.txt
+          true
+
+      - name: Download sing-box
+        run: |
+          VER=1.10.7
+          curl -sSL -o sing-box.tar.gz \
+            "https://github.com/SagerNet/sing-box/releases/download/v${VER}/sing-box-${VER}-linux-amd64.tar.gz"
+          tar -xzf sing-box.tar.gz
+          mv sing-box-${VER}-linux-amd64/sing-box ./sing-box
+          chmod +x ./sing-box
+          ./sing-box version
+
+      - name: Run checker
         env:
-          KEYS_DIR: "keys"          # папка с .conf / .json / .txt ключами
-          TIMEOUT: "8"
+          KEYS_FILE: keys/keys.txt
+          SUBS_FILE: keys/subs.txt
+          PROBE_URL: "https://www.gstatic.com/generate_204"
+          TIMEOUT: "15"
+          WORKERS: "8"
+          SINGBOX: ./sing-box
         run: python scripts/check_keys.py
 
       - name: Upload report
@@ -37,16 +59,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: key-check-report
-          path: report.json
-          if-no-files-found: warn
+          path: |
+            report.json
+            report.md
 
       - name: Publish summary
         if: always()
-        run: |
-          {
-            echo "## Результаты проверки ключей"
-            echo ""
-            echo '```json'
-            cat report.json 2>/dev/null || echo '{"error":"no report"}'
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: cat report.md >> "$GITHUB_STEP_SUMMARY" || true
